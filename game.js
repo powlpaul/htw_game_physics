@@ -1,7 +1,7 @@
 /* GTAT2 Game Technology & Interactive Systems */
 /* Autor: Paul Klingberg, 575868*/
-/* Übung Nr. 3*/
-/* Datum: 2022-10-31*/
+/* Übung Nr. 4*/
+/* Datum: 2022-11-14*/
 
 /* declarations */
 var canvasWidth = window.innerWidth;
@@ -18,7 +18,7 @@ var seesawLength = 0.25;                                   // Länge der Wippen 
 var seesawThickness = 0.0075;                              // Dicke der Wippen [m]
 var seesawTriangleOffset = 0.07;                           // Verschiebung des Wippen-Dreiecks vom Zentrum der Wippen [m]
 var seesawTriangleSideLength = 0.025;                      // Seitenlänge des Wippen-Dreiecks [m]
-var triangleHeight;                                        // Höhe des Dreiecks unter der Wippe (wird berechnet) [m]
+var triangleHeight= Math.sin(degrees_to_radians(seesawAngle)) * seesawLength/2; // Höhe des Dreiecks unter der Wippe (wird berechnet) [m]
 var edgeDistance = 0.6;                                    // Entfernung des Spielfeldrands vom Zentrum [m]
 var edgeBlockHeight = 0.01;                                // Höhe des Spielfeldrandanzeigers [m]
 var edgeBlockWidth = 0.04;                                 // Breite des Spielfeldrandanzeigers [m]
@@ -35,6 +35,18 @@ var seesawRightMousePressed = false;                       // Ob die rechte Wipp
 var seesawLeftMousePressed = false;                        // Ob die linke Wippe geklickt wurde
 var seesawAngleRight = degrees_to_radians(seesawAngle);    // Winkel der rechten Wippe [rad]
 var seesawAngleLeft = degrees_to_radians(-seesawAngle);    // Winkel der linken Wippe [rad]
+
+/* game state */
+var gameTime= 0;                                           // aktuelle Zeit [s]
+var timeStart = 0;                                         // Startzeit [ms]
+var seesawLeftReleased = false;
+var seesawLeftForce = 0;
+var seesawLeftLetGo = false;
+var seesawLeftTimeStart = 0;
+var seesawRightReleased = false;
+var seesawRightForce = 0;
+var seesawRightLetGo = false;
+var seesawRightTimeStart = 0;
 
 /* prepare program */
 function setup() {
@@ -67,42 +79,20 @@ function draw() {
         text('RESET', buttonPosX, buttonPosY);
     }
     strokeWeight(1.5);
-    if(mClicked && mouseInRange(buttonPosX, buttonPosY, buttonSizeX, buttonSizeY)) {
-        if (gameStarted === false) gameStarted = true;
-        else gameStarted = false;
-        mClicked = false;
-    }
-
-    // Mouse Dragging Right
-    if(mPressed && mouseInRangeCircular(toCanvasCoords((seesawDistance/2 + seesawLength/2) * M, (triangleHeight + seesawThickness/2) * M).x, toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2 + seesawThickness/2) * M).y, windowWidth * 0.015)) {
-        seesawRightMousePressed = true;
-        mouseStartY = mouseY;
+    if(mPressed && mouseInRange(buttonPosX, buttonPosY, buttonSizeX, buttonSizeY)) {
+        if (gameStarted === false){
+            gameStarted = true;
+            timeStart = Date.now();
+        } else {
+            gameStarted = false;
+            seesawLeftLetGo = false;
+            seesawRightLetGo = false;
+        }
         mPressed = false;
     }
 
-    if (seesawRightMousePressed) {
-        push();
-            noFill();
-            stroke(0, 0, 255);
-            ellipse(mouseX, mouseY, 20);
-        pop();
-
-        mouseDeltaY = -(mouseY - mouseStartY);
-        seesawAngleRight = degrees_to_radians(seesawAngle + (mouseDeltaY / 2));
-
-        if (seesawAngleRight < degrees_to_radians(-seesawAngle)) seesawAngleRight = degrees_to_radians(-seesawAngle);
-        if (seesawAngleRight > degrees_to_radians(seesawAngle)) seesawAngleRight = degrees_to_radians(seesawAngle);
-    }
-
-    if (seesawRightMousePressed&& mReleased) {
-        mouseDeltaY = 0;
-        seesawAngleRight = degrees_to_radians(seesawAngle);
-        seesawRightMousePressed = false;
-        mReleased = false;
-    }
-
     // Mouse Dragging Left
-    if(mPressed && mouseInRangeCircular(toCanvasCoords(-(seesawDistance/2 + seesawLength/2) * M, (triangleHeight + seesawThickness/2) * M).x, toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2 + seesawThickness/2) * M).y, windowWidth * 0.015)) {
+    if(gameStarted && !seesawLeftLetGo && mPressed && mouseInRangeCircular(toCanvasCoords(-(seesawDistance/2 + seesawLength/2) * M, (triangleHeight + seesawThickness/2) * M).x, toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2 + seesawThickness/2) * M).y, windowWidth * 0.015)) {
         seesawLeftMousePressed = true;
         mouseStartY = mouseY;
         mPressed = false;
@@ -112,7 +102,7 @@ function draw() {
         push();
             noFill();
             stroke(0, 0, 255);
-            ellipse(mouseX, mouseY, 20);
+            //ellipse(mouseX, mouseY, 20);
         pop();
 
         mouseDeltaY = -(mouseY - mouseStartY);
@@ -123,13 +113,71 @@ function draw() {
     }
 
     if (seesawLeftMousePressed && mReleased) {
+        seesawLeftForce = (seesawAngleLeft + degrees_to_radians(seesawAngle)) * 900;
+        seesawLeftTimeStart = Date.now();
+        seesawLeftReleased = true
         mouseDeltaY = 0;
         seesawAngleLeft = degrees_to_radians(-seesawAngle);
         seesawLeftMousePressed = false;
         mReleased = false;
+        seesawLeftLetGo = true;
+    }
+    // Mouse Dragging Right
+    if(gameStarted && !seesawRightLetGo && mPressed && mouseInRangeCircular(toCanvasCoords((seesawDistance/2 + seesawLength/2) * M, (triangleHeight + seesawThickness/2) * M).x, toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2 + seesawThickness/2) * M).y, windowWidth * 0.015)) {
+        seesawRightMousePressed = true;
+        mouseStartY = mouseY;
+        mPressed = false;
+    }
+
+    if (seesawRightMousePressed) {
+        push();
+            noFill();
+            stroke(0, 0, 255);
+            //ellipse(mouseX, mouseY, 20);
+        pop();
+
+        mouseDeltaY = -(mouseY - mouseStartY);
+        seesawAngleRight = degrees_to_radians(seesawAngle + (mouseDeltaY / 2));
+
+        if (seesawAngleRight < degrees_to_radians(-seesawAngle)) seesawAngleRight = degrees_to_radians(-seesawAngle);
+        if (seesawAngleRight > degrees_to_radians(seesawAngle)) seesawAngleRight = degrees_to_radians(seesawAngle);
+    }
+
+    if (seesawRightMousePressed && mReleased) {
+        seesawRightForce = (-seesawAngleRight + degrees_to_radians(seesawAngle)) * 900;
+        seesawRightTimeStart = Date.now();
+        seesawRightReleased = true
+        mouseDeltaY = 0;
+        seesawAngleRight = degrees_to_radians(seesawAngle);
+        seesawRightMousePressed = false;
+        mReleased = false;
+        seesawRightLetGo = true;
     }
 
     /* calculation */
+
+    // current time
+    if (gameStarted === true) {
+        gameTime = (Date.now() - timeStart) / 1000;
+    }
+
+    // left Boule position
+    var bouleLeftTime = 0
+    if (seesawLeftLetGo === true) bouleLeftTime = gameTime - ((seesawLeftTimeStart - timeStart) / 1000);
+    var bouleLeftPosX = schraegerWurfX((-seesawDistance/2 - seesawTriangleOffset - seesawTriangleSideLength/2 - 0.015) * M, seesawLeftForce, bouleLeftTime);
+    var bouleLeftPosY = schraegerWurfY((triangleHeight * 2 + bouleDiameter/2) * M, seesawLeftForce, bouleLeftTime);
+
+    // left Boule collision
+    if (bouleLeftPosY < bouleDiameter/2 * M) bouleLeftPosY = bouleDiameter/2 * M;
+
+    // right Boule position
+    var bouleRightTime = 0
+    if (seesawRightLetGo === true) bouleRightTime = gameTime - ((seesawRightTimeStart - timeStart) / 1000);
+    var bouleRightPosX = schraegerWurfX((seesawDistance/2 + seesawTriangleOffset + seesawTriangleSideLength/2 + 0.015) * M, -seesawRightForce, bouleRightTime);
+    var bouleRightPosY = schraegerWurfY((triangleHeight * 2 + bouleDiameter/2) * M, seesawRightForce, bouleRightTime);
+
+    // right Boule collision
+    if (bouleRightPosY < bouleDiameter/2 * M) bouleRightPosY = bouleDiameter/2 * M;
 
     /* display */
     rectMode(CORNER);
@@ -151,7 +199,7 @@ function draw() {
     
         // Wippenbasis Dreiecke
         fill('blue');
-        triangleHeight = Math.sin(degrees_to_radians(seesawAngle)) * seesawLength/2;
+        
         let triangleSide = 2 * triangleHeight / Math.sqrt(3);
         triangle((-seesawDistance/2 - triangleSide /2) * M, 0, (-seesawDistance/2) * M, (triangleHeight) * M, (-seesawDistance/2 + triangleSide /2) * M, 0);
         triangle((seesawDistance/2 - triangleSide /2) * M, 0, (seesawDistance/2) * M, (triangleHeight) * M, (seesawDistance/2 + triangleSide /2) * M, 0);
@@ -180,22 +228,58 @@ function draw() {
         rectMode(CORNER);
 
         // Boule links
-        stroke ('black');
-        fill('grey');
-        textAlign(CENTER, CENTER);
-        textSize(0.015 * windowWidth);
-        circle((-seesawDistance/2 - seesawTriangleOffset - seesawTriangleSideLength/2 - 0.015) * M, (triangleHeight * 2 + bouleDiameter/2) * M, bouleDiameter * M);
-        fill('black');
-        text('Γ', (-seesawDistance/2 - seesawTriangleOffset - seesawTriangleSideLength/2 - 0.015) * M, (triangleHeight * 2  + bouleDiameter/2) * M);
+        if (seesawLeftLetGo === false) {
+            push();
+                translate(-seesawDistance/2 * M, (triangleHeight + seesawThickness/2) * M);
+                rotate(seesawAngleLeft);
+                translate((-seesawTriangleOffset - seesawTriangleSideLength/2 - 0.01) * M,  (bouleDiameter/2 + 0.005) * M)
+                stroke ('black');
+                fill('grey');
+                textAlign(CENTER, CENTER);
+                textSize(0.015 * windowWidth);
+                circle(0, 0, bouleDiameter * M);
+                fill('black');
+                //text('Γ', 0, 0);
+            pop();
+        } else {
+            push();
+                translate(bouleLeftPosX, bouleLeftPosY);
+                stroke ('black');
+                fill('grey');
+                textAlign(CENTER, CENTER);
+                textSize(0.015 * windowWidth);
+                circle(0, 0, bouleDiameter * M);
+                fill('black');
+                //text('Γ', 0, 0);
+            pop();
+        }
     
         // Boule rechts
-        stroke ('black');
-        fill('grey');
-        circle((seesawDistance/2 + seesawTriangleOffset + seesawTriangleSideLength/2 + 0.015) * M, (triangleHeight * 2  + bouleDiameter/2) * M, bouleDiameter * M);
-        textAlign(CENTER, CENTER);
-        textSize(0.015 * windowWidth);
-        fill('black');
-        text('ᖉ', (seesawDistance/2 + seesawTriangleOffset + seesawTriangleSideLength/2 + 0.015) * M, (triangleHeight * 2  + bouleDiameter/2) * M);
+        if (seesawRightLetGo === false) {
+            push();
+                translate(seesawDistance/2 * M, (triangleHeight + seesawThickness/2) * M);
+                rotate(seesawAngleRight);
+                translate((seesawTriangleOffset + seesawTriangleSideLength/2 + 0.01) * M,  (bouleDiameter/2 + 0.005) * M)
+                stroke ('black');
+                fill('grey');
+                textAlign(CENTER, CENTER);
+                textSize(0.015 * windowWidth);
+                circle(0, 0, bouleDiameter * M);
+                fill('black');
+                //text('Γ', 0, 0);
+            pop();
+        } else {
+            push();
+                translate(bouleRightPosX, bouleRightPosY);
+                stroke ('black');
+                fill('grey');
+                textAlign(CENTER, CENTER);
+                textSize(0.015 * windowWidth);
+                circle(0, 0, bouleDiameter * M);
+                fill('black');
+                //text('Γ', 0, 0);
+            pop();
+        }
     pop();
 }
 
@@ -236,4 +320,16 @@ function mouseInRangeCircular(areaPosX, areaPosY, radius) {
     let deltaX = Math.abs(mouseX-areaPosX);
     let deltaY = Math.abs(mouseY-areaPosY);
     return Math.sqrt(deltaX * deltaX  + deltaY * deltaY) < radius;
+}
+
+function schraegerWurfX(x0, v0x, gameTime) {
+    let x = 0;
+    x = x0 + v0x * gameTime; 
+    return x;
+}
+
+function schraegerWurfY(y0, v0y, gameTime) {
+    let y = 0;
+    y = -981 * gameTime* gameTime/ 2 + v0y * gameTime+ y0; 
+    return y;
 }
