@@ -1,6 +1,6 @@
 /* GTAT2 Game Technology & Interactive Systems */
 /* Autor: Paul Klingberg, 575868*/
-/* Übung Nr. 6.1*/
+/* Übung Nr. 7*/
 /* Datum: 2022-12-01*/
 
 /* declarations */
@@ -34,13 +34,19 @@ const cochonnetDiameter = 0.04;                            // Durchmesser des Co
 const bouleDiameter = 0.04;                                // Durchmesser der Boule [m]
 const bouleWeight = 800;                                   // Boule Gewicht [g]
 var bouleLeftV0;                                           // Startgeschwiundigkeit [m/s]
-var bouleLeftPV;                                           // Ortsvektor linke Boule
-var bouleLeftPV0;                                          // Anfangs-Ortsvektor linke Boule
-var bouleLeftVV;                                           // Geschwindigkeitsvektor linke Boule
+var bouleLeftPV;                                           // Ortsvektor linke Boule [m]
+var bouleLeftPV0;                                          // Anfangs-Ortsvektor linke Boule [m]
+var bouleLeftVV;                                           // Geschwindigkeitsvektor linke Boule [m/s]
+var bouleLeftInclineV;                                     // Geschwindigkeit auf der schiefen Ebene linke Boule [m/s]
+var bouleLeftInclineS;                                     // Position auf der schiefen Ebene linke Boule [m]
+var bouleLeftInclineFloor;                                 // Aktuelles Segment der schiefen Ebenen linke Boule
 var bouleRightV0;                                          // Startgeschwiundigkeit [m/s]
-var bouleRightPV;                                          // Ortsvektor rechte Boule
-var bouleRightPV0;                                         // Anfangs-Ortsvektor rechte Boule
-var bouleRightVV;                                          // Geschwindigkeitsvektor rechte Boule
+var bouleRightPV;                                          // Ortsvektor rechte Boule [m]
+var bouleRightPV0;                                         // Anfangs-Ortsvektor rechte Boule [m]
+var bouleRightVV;                                          // Geschwindigkeitsvektor rechte Boule [m/s]
+var bouleRightInclineV;                                    // Geschwindigkeit auf der schiefen Ebene rechte Boule [m/s]
+var bouleRightInclineS;                                    // Position auf der schiefen Ebene rechte Boule [m]
+var bouleRightInclineFloor;                                // Aktuelles Segment der schiefen Ebenen rechte Boule
 const gravity = 9.81;                                      // Erdbeschleunigungskonstante [m/s²]
 const frameQuantization = 200;                             // Anzahl der Zwischenschritte in der Berechnung für jeden Frame
 
@@ -74,7 +80,7 @@ var bouleRightLeftStartingPosition = false;                // Ob die rechte Boul
 function setup() {
     createCanvas(windowWidth, windowHeight);
     frameRate(frmRate);                                    // Setzen der Bildwechselrate
-    frameTime = 1/frmRate;                                 // Zeitincrement mit Bildwechsel synchron
+    frameTime = 1/frmRate/2;                               // Zeitincrement mit Bildwechsel synchron (Momentan Zeitlupe mit halber Geschwindigkeit, damit besser erkennbar ist, was geschieht)
     gameTime = 0;                                          // Sekunden, seit das Spiel startete
 
     /* derived variables */
@@ -107,13 +113,16 @@ function setup() {
     // Boden-Konturen Ortsvektoren festlegen
     floorPV[0] = createVector(-seesawDistance/2 - 0.5 * seesawLength * cos(seesawAngle), triangleHeight * 2); // Endpunkt linke Wippe
     floorPV[1] = createVector(-seesawDistance/2 + 0.5 * seesawLength * cos(seesawAngle), 0);                  // Fußpunkt     -"-
-    floorPV[2] = createVector(seesawDistance/2 - 0.5 * seesawLength * cos(seesawAngle), 0);                                // Fußpunkt rechte Wippe
-    floorPV[3] = createVector(seesawDistance/2 + 0.5 * seesawLength * cos(seesawAngle), triangleHeight * 2);               // Endpunkt     -"-
+    floorPV[2] = createVector(seesawDistance/2 - 0.5 * seesawLength * cos(seesawAngle), 0);                   // Fußpunkt rechte Wippe
+    floorPV[3] = createVector(seesawDistance/2 + 0.5 * seesawLength * cos(seesawAngle), triangleHeight * 2);  // Endpunkt     -"-
 
     // Zusätzliche Eigenschaften der Boden-Konturen berechnen
-    for (i = 0; i < floorPV.length - 1; i++) {
+    for (let i = 0; i < floorPV.length - 1; i++) {
         // Segmentvektoren
         floorSV[i] = p5.Vector.sub(floorPV[i + 1], floorPV[i]);
+
+        // Länge der Segmente
+        floorSVLength[i] = floorSV[i].mag();
     }
 }
 
@@ -124,7 +133,7 @@ function draw() {
     strokeWeight(1.5);
     stroke ('black');
 
-    M = 0.9 * windowWidth/playGroundWidth;               // Maßstab bezügl. 90% Spielfeldgröße
+    M = 0.9 * windowWidth/playGroundWidth;                 // Maßstab bezügl. 90% Spielfeldgröße
     xi0 = 0.5 * windowWidth;                               // Koordinatenursprung x festlegen
     yi0 = 0.75 * windowHeight;                             // Koordinatenursprung y festlegen
 
@@ -234,10 +243,10 @@ function draw() {
 
     /* calculation */
 
-    for (timeSteps = 0; timeSteps < frameQuantization; timeSteps++) { // Zwischenschritte
+    for (let timeSteps = 0; timeSteps < frameQuantization; timeSteps++) { // Zwischenschritte
         var frameTimeStepped = frameTime/frameQuantization;
+
         // aktuelle Zeit
-        
         switch (gameState) {
             case "started":
                 gameTime = gameTime + frameTimeStepped;
@@ -259,14 +268,18 @@ function draw() {
                 var collision = distanceFromFloor(bouleLeftPV, floorPV, floorSV);
 
                 // Testen, ob eine der Entfernungen kleiner als der Boule-Radius sind und die Boule ihre Startposition verlassen hat
-                for (i = 0; i < collision.distance.length; i++) {
+                for (let i = 0; i < collision.distance.length; i++) {
                     if (collision.distance[i] < bouleDiameter/2 && bouleLeftLeftStartingPosition) {
                         bouleLeftState = "onSlope";
                         bouleLeftLeftStartingPosition = false;
+                        var newCoords = transformVectorAlongCoords(bouleLeftVV, floorSV[i].heading());
+                        bouleLeftInclineV = newCoords.y;
+                        bouleLeftInclineS = collision.lengthFromPV[i];
+                        bouleLeftInclineFloor = i;
                         break;
                     } else if (!bouleLeftLeftStartingPosition) {
                         bouleLeftLeftStartingPosition = true;
-                        for (j = 0; j < collision.distance.length; j++) {
+                        for (let j = 0; j < collision.distance.length; j++) {
                             if (collision.distance[j] < bouleDiameter/2) {
                                 bouleLeftLeftStartingPosition = false;
                             }
@@ -275,18 +288,30 @@ function draw() {
                 }
 
                 bouleLeftTime = gameTime - seesawLeftTimeStart;
-                var bouleLeftVectors = obliqueThrowNumeric(bouleLeftPV, bouleLeftVV, frameTimeStepped); //[newPV, newVV]
+                var bouleLeftVectors = obliqueThrowNumeric(bouleLeftPV, bouleLeftVV, frameTimeStepped);
                 bouleLeftPV = bouleLeftVectors[0];
                 bouleLeftVV = bouleLeftVectors[1];
                 break;
             case "onSlope":
                 bouleLeftTime = gameTime - seesawLeftTimeStart;
-                bouleLeftPV.x = bouleLeftPV.x;
-                bouleLeftPV.y = bouleLeftPV.y;
+
+                // Check, ob zwischen den Ebenen übergeben werden muss
+                var handover = inclinedPlaneHandover(bouleLeftInclineFloor, floorSVLength, bouleLeftInclineS, bouleDiameter, seesawAngle);
+                bouleLeftInclineS = handover.bouleS;
+                bouleLeftInclineFloor = handover.floor;
+
+                // Berechnung der Position auf der Schiefen Ebene
+                var inclinedPlane = inclinedPlaneNumeric(bouleLeftInclineV, bouleLeftInclineS, floorSV[bouleLeftInclineFloor].heading(), frameTimeStepped);
+                bouleLeftInclineV = inclinedPlane.v;
+                bouleLeftInclineS = inclinedPlane.s;
+                //console.log("bouleLeftInclineV: " + bouleLeftInclineV + " bouleLeftInclineS: " + bouleLeftInclineS);
+                var floorSVnormalized = floorSV[bouleLeftInclineFloor].normalize();
+                bouleLeftPV = p5.Vector.add(floorPV[bouleLeftInclineFloor], p5.Vector.mult(floorSVnormalized, bouleLeftInclineS));
+                bouleLeftPV.add(p5.Vector.mult(createVector(-floorSVnormalized.y, floorSVnormalized.x), bouleDiameter/2)); // Boule um Radius hochschieben
                 break;
         }
 
-        // Boule rechs Position
+        // Boule rechts Position
         var bouleRightTime = 0;
         switch(bouleRightState) {
             case "onSeesaw":
@@ -298,14 +323,18 @@ function draw() {
                 var collision = distanceFromFloor(bouleRightPV, floorPV, floorSV);
 
                 // Testen, ob eine der Entfernungen kleiner als der Boule-Radius sind und die Boule ihre Startposition verlassen hat
-                for (i = 0; i < collision.distance.length; i++) {
+                for (let i = 0; i < collision.distance.length; i++) {
                     if (collision.distance[i] < bouleDiameter/2 && bouleRightLeftStartingPosition) {
                         bouleRightState = "onSlope";
                         bouleRightLeftStartingPosition = false;
+                        var newCoords = transformVectorAlongCoords(bouleRightVV, floorSV[i].heading());
+                        bouleRightInclineV = newCoords.y;
+                        bouleRightInclineS = collision.lengthFromPV[i];
+                        bouleRightInclineFloor = i;
                         break;
                     } else if (!bouleRightLeftStartingPosition) {
                         bouleRightLeftStartingPosition = true;
-                        for (j = 0; j < collision.distance.length; j++) {
+                        for (let j = 0; j < collision.distance.length; j++) {
                             if (collision.distance[j] < bouleDiameter/2) {
                                 bouleRightLeftStartingPosition = false;
                             }
@@ -314,14 +343,26 @@ function draw() {
                 }
 
                 bouleRightTime = gameTime - seesawRightTimeStart;
-                var bouleRightVectors = obliqueThrowNumeric(bouleRightPV, bouleRightVV, frameTimeStepped); //[newPV, newVV]
+                var bouleRightVectors = obliqueThrowNumeric(bouleRightPV, bouleRightVV, frameTimeStepped);
                 bouleRightPV = bouleRightVectors[0];
                 bouleRightVV = bouleRightVectors[1];
                 break;
             case "onSlope":
                 bouleRightTime = gameTime - seesawRightTimeStart;
-                bouleRightPV.x = bouleRightPV.x;
-                bouleRightPV.y = bouleRightPV.y;
+
+                // Check, ob zwischen den Ebenen übergeben werden muss
+                var handover = inclinedPlaneHandover(bouleRightInclineFloor, floorSVLength, bouleRightInclineS, bouleDiameter, seesawAngle);
+                bouleRightInclineS = handover.bouleS;
+                bouleRightInclineFloor = handover.floor;
+
+                // Berechnung der Position auf der Schiefen Ebene
+                var inclinedPlane = inclinedPlaneNumeric(bouleRightInclineV, bouleRightInclineS, floorSV[bouleRightInclineFloor].heading(), frameTimeStepped);
+                bouleRightInclineV = inclinedPlane.v;
+                bouleRightInclineS = inclinedPlane.s;
+                //console.log("bouleRightInclineV: " + bouleRightInclineV + " bouleRightInclineS: " + bouleRightInclineS);
+                var floorSVnormalized = floorSV[bouleRightInclineFloor].normalize();
+                bouleRightPV = p5.Vector.add(floorPV[bouleRightInclineFloor], p5.Vector.mult(floorSVnormalized, bouleRightInclineS));
+                bouleRightPV.add(p5.Vector.mult(createVector(-floorSVnormalized.y, floorSVnormalized.x), bouleDiameter/2)); // Boule um Radius hochschieben
                 break;
         }
 
@@ -333,7 +374,8 @@ function draw() {
                 if (seesawAngleLeft > seesawAngle) seesawAngleLeft = seesawAngle;
                 break;
             case "onFlight":
-                var seesawLeftMyLerpAmount = bouleLeftTime * 15;
+                // Kleine Wippenanimation, bis Federn implementiert sind
+                var seesawLeftMyLerpAmount = bouleLeftTime * 0.5;
                 if (seesawLeftMyLerpAmount >= 1) seesawLeftMyLerpAmount = 1;
                 seesawAngleLeft = myLerp(seesawAngleLeft, mirrorAngle(seesawAngle), seesawLeftMyLerpAmount);
                 break;
@@ -350,7 +392,8 @@ function draw() {
                 if (seesawAngleRight > seesawAngle) seesawAngleRight = seesawAngle;
                 break;
             case "onFlight":
-                var seesawRightMyLerpAmount = bouleRightTime * 15;
+                // Kleine Wippenanimation, bis Federn implementiert sind
+                var seesawRightMyLerpAmount = bouleRightTime * 0.5;
                 if (seesawRightMyLerpAmount >= 1) seesawRightMyLerpAmount = 1;
                 seesawAngleRight = myLerp(seesawAngleRight, seesawAngle, seesawRightMyLerpAmount);
                 break;
@@ -415,7 +458,7 @@ function draw() {
         pop();
 
         // Form der Kollisions-Vektoren
-        /*for (i = 0; i < floorSV.length; i++) {
+        /*for (let i = 0; i < floorSV.length; i++) {
             strokeWeight(5);
             stroke(255,0,0);
             line(floorPV[i].x * M, floorPV[i].y * M, p5.Vector.add(floorPV[i], floorSV[i]).x * M, p5.Vector.add(floorPV[i], floorSV[i]).y * M);
@@ -464,13 +507,46 @@ function mouseInRangeCircular(areaPosX, areaPosY, radius) {
 }
 
 // Schräger Wurf, numerischer Ansatz
-function obliqueThrowNumeric(PV, VV, deltaT) {
-    var newPV = createVector(PV.x + VV.x * deltaT, PV.y + VV.y * deltaT);
-    var newVV = createVector(VV.x, VV.y - gravity * deltaT);
-    var newVectors = [newPV, newVV];
+function obliqueThrowNumeric(PV0, VV0, deltaT) {
+    var PV = createVector(PV0.x + VV0.x * deltaT, PV0.y + VV0.y * deltaT);
+    var VV = createVector(VV0.x, VV0.y - gravity * deltaT);
+    var newVectors = [PV, VV];
     return newVectors;
 }
 
+// Schiefe Ebene, numerischer Ansatz
+function inclinedPlaneNumeric(v0, s0, alpha, deltaT) {
+    var g2 = gravity * sin(alpha);
+    var v = v0 - g2 * deltaT;
+    var s = s0 + v0 * deltaT;
+    return {
+        v: v,
+        s: s
+    };
+}
+
+// Übergabe zwischen den schiefen Ebenen
+function inclinedPlaneHandover(floor0, floorSVLength, bouleS0, bouleDiameter, seesawAngle) {
+    var limiter = bouleDiameter/2 * sin(seesawAngle/2);
+    var bouleS = bouleS0;
+    var floor = floor0;
+
+    // Überprüfen, ob Boule-Position innerhalb der beiden Limiter ist
+    if (bouleS0 > floorSVLength[floor0] - limiter) {
+        floor++;
+        bouleS = limiter;
+        //console.log("Übergabe! Von " + floor0 + " nach " + floor + ". Von " + bouleS0 + " nach " + bouleS);
+    } else if (bouleS0 < limiter) {
+        floor--;
+        bouleS = floorSVLength[floor] - limiter;
+        //console.log("Übergabe! Von " + floor0 + " nach " + floor + ". Von " + bouleS0 + " nach " + bouleS + ". floorSVLength: " + floorSVLength[floor]);
+    }
+
+    return {
+        bouleS: bouleS,
+        floor: floor
+    }
+}
 
 // Lineare Interpolation
 function myLerp(start, end, amount){
@@ -493,12 +569,13 @@ function rotateVectorAroundVector(vector, pivotVector, rotationAngle) {
     return vector;
 }
 
-// Gibt zurück, wie nah eine Position an der Kollisionsform ist
+// Gibt zurück, wie nah eine Position an der Kollisionsform ist und wo sich der Lotfußpunkt befindet
 function distanceFromFloor(positionVector, floorPV, floorSV) {
     var distance = [];
     var intersection = [];
+    var lengthFromPV = [];
 
-    for (i = 0; i < floorSV.length; i++) {
+    for (let i = 0; i < floorSV.length; i++) {
         // Lotfußpunkt, Formel aus https://de.wikipedia.org/w/index.php?title=Lot_(Mathematik)&stable=1#Lotgerade,_Fu%C3%9Fpunkt
         var a = floorPV[i];     // Stützvektor
         var r = floorSV[i];     // Richtungsvektor
@@ -518,12 +595,24 @@ function distanceFromFloor(positionVector, floorPV, floorSV) {
         var normal = createVector(r.y, -r.x).normalize();
         distance[i] = p5.Vector.dot(connection, normal);
         intersection[i] = intersection;
+        lengthFromPV[i] = p5.Vector.dist(intersection, a);
     }
 
     return {
         distance: distance,
-        intersection: intersection
+        intersection: intersection,
+        lengthFromPV: lengthFromPV
     };
+}
+
+// Vektor in gedrehtes Koordinatensystem überführen
+function transformVectorAlongCoords(inputV, phi) {
+    var outputV = createVector(0, 0);
+    var alpha = inputV.heading();
+    var magnitude = inputV.mag();
+    outputV.x = magnitude * sin(alpha - phi);
+    outputV.y = magnitude * cos(alpha - phi);
+    return outputV;
 }
 
 /* drawing functions */
@@ -531,4 +620,18 @@ function distanceFromFloor(positionVector, floorPV, floorSV) {
 function drawTriangleFromHeight(posX, posY, height) {
     let sideLength = 2 * height/Math.sqrt(3);
     triangle((posX - sideLength/2) * M, posY * M, posX * M, (posY + height) * M, (posX + sideLength/2) * M, posY * M);
+}
+
+function drawArrow(base, vec, myColor) {
+  push();
+  stroke(myColor);
+  strokeWeight(3);
+  fill(myColor);
+  translate(base.x * M, base.y * M);
+  line(0, 0, vec.x * M, vec.y * M);
+  rotate(vec.heading());
+  let arrowSize = 7;
+  translate(vec.mag() - arrowSize, 0);
+  triangle(0, arrowSize / 2, 0, -arrowSize / 2, arrowSize, 0);
+  pop();
 }
