@@ -1,7 +1,7 @@
 /* GTAT2 Game Technology & Interactive Systems */
 /* Autor: Paul Klingberg, 575868*/
-/* Übung Nr. 7*/
-/* Datum: 2022-12-01*/
+/* Übung Nr. 8*/
+/* Datum: 2022-12-12*/
 
 /* declarations */
 var canvasWidth = window.innerWidth;
@@ -49,6 +49,7 @@ var bouleRightInclineS;                                    // Position auf der s
 var bouleRightInclineFloor;                                // Aktuelles Segment der schiefen Ebenen rechte Boule
 const gravity = 9.81;                                      // Erdbeschleunigungskonstante [m/s²]
 const frameQuantization = 200;                             // Anzahl der Zwischenschritte in der Berechnung für jeden Frame
+const frictionFactor =  0.05;                              // Der Reibungskoeffizienz der Boules auf den Ebenen
 
 var buttonPosX = canvasWidth * 0.85;                       // Button Position X [pixel]
 var buttonPosY = canvasHeight * 0.9;                       // Button Position Y [pixel]
@@ -156,7 +157,7 @@ function draw() {
     strokeWeight(1.5);
 
     // Start/Reset-Button Logik
-    if(mPressed && mouseInRange(buttonPosX, buttonPosY, buttonSizeX, buttonSizeY)) {
+    if (mPressed && mouseInRange(buttonPosX, buttonPosY, buttonSizeX, buttonSizeY)) {
         switch (gameState) {
             case "started":
                 gameState = "stopped";
@@ -174,7 +175,11 @@ function draw() {
     }
 
     // Maus-ziehen an der Wippe links
-    if(gameState == "started" && bouleLeftState == "onSeesaw" && mPressed && mouseInRangeCircular(toCanvasCoords(-(seesawDistance/2 + seesawLength/2) * M, triangleHeight * M).x, toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2) * M).y, windowWidth * 0.015)) {
+    if (gameState == "started" 
+        && bouleLeftState == "onSeesaw" 
+        && mPressed 
+        && mouseInRangeCircular(toCanvasCoords(-(seesawDistance/2 + seesawLength/2) * M, triangleHeight * M).x,
+                                toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2) * M).y, windowWidth * 0.015)) {
         seesawLeftMousePressed = true;
         mouseStartY = mouseY;
         mPressed = false;
@@ -208,7 +213,11 @@ function draw() {
     }
 
     // Maus-ziehen an der Wippe rechts
-    if(gameState == "started" && bouleRightState == "onSeesaw" && mPressed && mouseInRangeCircular(toCanvasCoords((seesawDistance/2 + seesawLength/2) * M, triangleHeight * M).x, toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2) * M).y, windowWidth * 0.015)) {
+    if (gameState == "started"
+        && bouleRightState == "onSeesaw"
+        && mPressed
+        && mouseInRangeCircular(toCanvasCoords((seesawDistance/2 + seesawLength/2) * M, triangleHeight * M).x,
+                                toCanvasCoords(seesawDistance/2 * M, (triangleHeight * 2) * M).y, windowWidth * 0.015)) {
         seesawRightMousePressed = true;
         mouseStartY = mouseY;
         mPressed = false;
@@ -357,6 +366,9 @@ function draw() {
 
                 // Berechnung der Position auf der Schiefen Ebene
                 var inclinedPlane = inclinedPlaneNumeric(bouleRightInclineV, bouleRightInclineS, floorSV[bouleRightInclineFloor].heading(), frameTimeStepped);
+                //var debugAlpha = "alpha: " + degrees(floorSV[bouleRightInclineFloor].heading());
+                //var debugV = "v: " + inclinedPlane.v;
+                //var debugS = "s: " + inclinedPlane.s;
                 bouleRightInclineV = inclinedPlane.v;
                 bouleRightInclineS = inclinedPlane.s;
                 //console.log("bouleRightInclineV: " + bouleRightInclineV + " bouleRightInclineS: " + bouleRightInclineS);
@@ -457,13 +469,21 @@ function draw() {
                 circle(0, 0, bouleDiameter * M);
         pop();
 
-        // Form der Kollisions-Vektoren
+
+
+        // Debug Form der Kollisions-Vektoren
         /*for (let i = 0; i < floorSV.length; i++) {
             strokeWeight(5);
             stroke(255,0,0);
             line(floorPV[i].x * M, floorPV[i].y * M, p5.Vector.add(floorPV[i], floorSV[i]).x * M, p5.Vector.add(floorPV[i], floorSV[i]).y * M);
         }*/
     pop();
+    // Debug Text
+    /*textAlign(LEFT);
+    fill('black');
+    text(debugAlpha, 50, 30);
+    text(debugV, 50, 100);
+    text(debugS, 50, 200);*/
 }
 
 /* isr */
@@ -514,10 +534,26 @@ function obliqueThrowNumeric(PV0, VV0, deltaT) {
     return newVectors;
 }
 
-// Schiefe Ebene, numerischer Ansatz
+// Schiefe Ebene, numerischer Ansatz, mit Reibung
 function inclinedPlaneNumeric(v0, s0, alpha, deltaT) {
-    var g2 = gravity * sin(alpha);
-    var v = v0 - g2 * deltaT;
+    // Fallunterscheidung für Vorzeichen von v0
+    var sign = 1;
+    if (v0 < Math.abs(gravity * frictionFactor * deltaT)) {
+        sign = -1;
+    }
+
+    // falls v0 = 0 gibt es keine Gleitreibung und da es Kugeln sind kann angenommen werden, dass es keine Haftreibung gibt
+    if (v0 == 0) {
+        sign = 0;
+    }
+
+    var v = v0 + gravity * (-sin(alpha) - sign * frictionFactor * cos(alpha)) * deltaT;
+
+    // falls alpha = 0 vereinfacht sich die Formel
+    if (degrees(alpha) == 0) {
+        v = v0 - gravity * sign * frictionFactor * deltaT;
+    }
+
     var s = s0 + v0 * deltaT;
     return {
         v: v,
