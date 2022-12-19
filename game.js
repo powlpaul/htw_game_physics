@@ -1,25 +1,36 @@
 /* GTAT2 Game Technology & Interactive Systems */
 /* Autor: Paul Klingberg, 575868*/
-/* Übung Nr. 8*/
-/* Datum: 2022-12-12*/
+/* Übung Nr. 9*/
+/* Datum: 2022-12-19*/
 
 /* declarations */
+
+/* display */
 var canvasWidth = window.innerWidth;
 var canvasHeight = window.innerHeight;
-
 var M;                                                     // Maßstab [pixel/meter]
 var xi0, yi0;                                              // Koordinatenursprung intern
+var buttonPosX = canvasWidth * 0.85;                       // Button Position X [pixel]
+var buttonPosY = canvasHeight * 0.9;                       // Button Position Y [pixel]
+var buttonSizeX = canvasWidth * 0.12;                      // Button Breite [pixel]
+var buttonSizeY = canvasWidth * 0.04;                      // Button Höhe [pixel]
+var mouseStartY = 0;                                       // Wo sich die Maus beim Klick auf die Wippe befunden hatte [pixel]
+var mouseDeltaY = 0;                                       // Wo sich die Maus daraufhin befindet [pixel]
 
+/* pitch */
 const playGroundWidth = 1.6;                               // Spielfeldgröße [m]
 const playGroundHeight = 0.07;                             // Höhe des Spielfeldbodens [m]
 const seesawDistance = 1;                                  // Entfernung der Wippe vom Zentrum [m]
-var seesawAngle = 20;                                      // Start-Winkel der Wippen [grad]
+const edgeDistance = 0.6;                                  // Entfernung des Spielfeldrands vom Zentrum [m]
+const edgeBlockHeight = 0.01;                              // Höhe des Spielfeldrandanzeigers [m]
+const edgeBlockWidth = 0.04;                               // Breite des Spielfeldrandanzeigers [m]
 const seesawLength = 0.25;                                 // Länge der Wippen [m]
 const seesawThickness = 0.005;                             // Dicke der Wippen [m]
 const seesawTriangleOffset = 0.07;                         // Verschiebung des Wippen-Dreiecks vom Zentrum der Wippen [m]
 const seesawTriangleSideLength = 0.025;                    // Seitenlänge des Wippen-Dreiecks [m]
 var triangleHeight;                                        // Höhe des Dreiecks unter der Wippe [m]
 var seesawTriangleHeight;                                  // Höhe des Dreiecks auf der Wippe[m]
+var seesawAngle = 20;                                      // Start-Winkel der Wippen [grad]
 var seesawAngleRight;                                      // Winkel der rechten Wippe [rad]
 var seesawAngleRightControl;                               // Einstell-Winkel der rechten Wippe durch Mausposition [rad]
 var seesawAngleLeft;                                       // Winkel der linken Wippe [rad]
@@ -27,12 +38,12 @@ var seesawAngleLeftControl;                                // Einstell-Winkel de
 var seesawLeftPos;                                         // Position der linken Wippe als Vektor [m, m]
 var seesawRightPos;                                        // Position der rechten Wippe als Vektor [m, m]
 
-const edgeDistance = 0.6;                                  // Entfernung des Spielfeldrands vom Zentrum [m]
-const edgeBlockHeight = 0.01;                              // Höhe des Spielfeldrandanzeigers [m]
-const edgeBlockWidth = 0.04;                               // Breite des Spielfeldrandanzeigers [m]
+/* balls */
 const cochonnetDiameter = 0.04;                            // Durchmesser des Cochonnet [m]
 const bouleDiameter = 0.04;                                // Durchmesser der Boule [m]
-const bouleWeight = 800;                                   // Boule Gewicht [g]
+const bouleWeight = 4.5;                                   // Boule Gewicht [g]
+const bouleCW = 0.45;                                      // Boule Strömungswiderstandskoeffizient
+var bouleFrictionMass;                                     // Boule Reibungs-Masse-Verhältnis
 var bouleLeftV0;                                           // Startgeschwiundigkeit [m/s]
 var bouleLeftPV;                                           // Ortsvektor linke Boule [m]
 var bouleLeftPV0;                                          // Anfangs-Ortsvektor linke Boule [m]
@@ -47,17 +58,15 @@ var bouleRightVV;                                          // Geschwindigkeitsve
 var bouleRightInclineV;                                    // Geschwindigkeit auf der schiefen Ebene rechte Boule [m/s]
 var bouleRightInclineS;                                    // Position auf der schiefen Ebene rechte Boule [m]
 var bouleRightInclineFloor;                                // Aktuelles Segment der schiefen Ebenen rechte Boule
+
+/* physics calculation */
 const gravity = 9.81;                                      // Erdbeschleunigungskonstante [m/s²]
 const frameQuantization = 200;                             // Anzahl der Zwischenschritte in der Berechnung für jeden Frame
+const timescale = 1;                                       // Zeit-Dehnung
 const frictionFactor =  0.05;                              // Der Reibungskoeffizienz der Boules auf den Ebenen
-
-var buttonPosX = canvasWidth * 0.85;                       // Button Position X [pixel]
-var buttonPosY = canvasHeight * 0.9;                       // Button Position Y [pixel]
-var buttonSizeX = canvasWidth * 0.12;                      // Button Breite [pixel]
-var buttonSizeY = canvasWidth * 0.04;                      // Button Höhe [pixel]
-var mouseStartY = 0;                                       // Wo sich die Maus beim Klick auf die Wippe befunden hatte [pixel]
-var mouseDeltaY = 0;                                       // Wo sich die Maus nun befindet [pixel]
-
+const airDensity = 1.30;                                   // Luftdichte [kg/m³]
+const windSpeedMax = 5;                                    // Maximale Windgeschwindigkeit [m/s]
+var windSpeed = (Math.random()*2 - 1) * windSpeedMax;      // Windgeschwindigkeit [m/s]
 var floorPV = [];                                          // Ortsvektoren der Segmente Wippe links, Ebene, Wippe rechts
 var floorSV = [];                                          // Segmentvektoren der Segmente
 var floorSVLength = [];                                    // Länge der Segmentvektoren der Segmente
@@ -81,7 +90,7 @@ var bouleRightLeftStartingPosition = false;                // Ob die rechte Boul
 function setup() {
     createCanvas(windowWidth, windowHeight);
     frameRate(frmRate);                                    // Setzen der Bildwechselrate
-    frameTime = 1/frmRate/2;                               // Zeitincrement mit Bildwechsel synchron (Momentan Zeitlupe mit halber Geschwindigkeit, damit besser erkennbar ist, was geschieht)
+    frameTime = 1/frmRate/timescale;                       // Zeitincrement mit Bildwechsel synchron
     gameTime = 0;                                          // Sekunden, seit das Spiel startete
 
     /* derived variables */
@@ -92,6 +101,7 @@ function setup() {
     seesawAngleRightControl = seesawAngleRight;
     seesawAngleLeftControl = seesawAngleLeft;
     seesawTriangleHeight = 0.5 * seesawTriangleSideLength * Math.sqrt(3);
+    bouleFrictionMass = bouleWeight/1000/(airDensity * bouleCW * Math.PI * Math.pow((bouleDiameter/2), 2));
 
     bouleLeftPV = createVector(0, 0);                      // Ortsvektor linke Boule kreieren
     bouleLeftPV0 = createVector(0, 0);                     // Anfangs-Ortsvektor linke Boule kreieren
@@ -100,7 +110,7 @@ function setup() {
     bouleRightPV0 = createVector(0, 0);                    // Anfangs-Ortsvektor rechte Boule kreieren 
     bouleRightVV = createVector(0, 0);                     // Geschwindigkeitsvektor rechte Boule kreieren
 
-    //Ruhelage Boule auf den Wippen (kartesisch)
+    /* rest position boules on the seesaws (cartesian) */
     seesawLeftPos = createVector(-seesawDistance/2, triangleHeight);
     bouleLeftPV0.x = -seesawDistance/2 - seesawLength/2 + seesawTriangleOffset/2.5;
     bouleLeftPV0.y = triangleHeight + bouleDiameter/2;
@@ -111,13 +121,13 @@ function setup() {
     bouleRightPV0.y = triangleHeight + bouleDiameter/2;
     bouleRightPV0 = rotateVectorAroundVector(bouleRightPV0, seesawRightPos, seesawAngle);
 
-    // Boden-Konturen Ortsvektoren festlegen
+    /* set up ground location vectors */
     floorPV[0] = createVector(-seesawDistance/2 - 0.5 * seesawLength * cos(seesawAngle), triangleHeight * 2); // Endpunkt linke Wippe
     floorPV[1] = createVector(-seesawDistance/2 + 0.5 * seesawLength * cos(seesawAngle), 0);                  // Fußpunkt     -"-
     floorPV[2] = createVector(seesawDistance/2 - 0.5 * seesawLength * cos(seesawAngle), 0);                   // Fußpunkt rechte Wippe
     floorPV[3] = createVector(seesawDistance/2 + 0.5 * seesawLength * cos(seesawAngle), triangleHeight * 2);  // Endpunkt     -"-
 
-    // Zusätzliche Eigenschaften der Boden-Konturen berechnen
+    /* calculate additional ground properties */
     for (let i = 0; i < floorPV.length - 1; i++) {
         // Segmentvektoren
         floorSV[i] = p5.Vector.sub(floorPV[i + 1], floorPV[i]);
@@ -165,6 +175,7 @@ function draw() {
                 bouleRightState = "onSeesaw";
                 seesawAngleLeftControl = seesawAngleLeft;
                 seesawAngleRightControl = seesawAngleRight;
+                windSpeed = (Math.random()*2 - 1) * windSpeedMax; 
                 break;
             case "stopped":
                 gameState = "started";
@@ -197,7 +208,7 @@ function draw() {
     }
 
     if (seesawLeftMousePressed && mReleased) {
-        seesawLeftForce = (degrees(seesawAngleLeft) + degrees(seesawAngle)) * 80; // Temporäre Werte, bis die Kraft mit Federn berechnet wird [N]
+        seesawLeftForce = (degrees(seesawAngleLeft) + degrees(seesawAngle))/2.05; // Temporäre Werte, bis die Kraft mit Federn berechnet wird [N]
         seesawLeftTimeStart = gameTime;
         mouseDeltaY = 0;
         seesawLeftMousePressed = false;
@@ -235,7 +246,7 @@ function draw() {
     }
 
     if (seesawRightMousePressed && mReleased) {
-        seesawRightForce = (-degrees(seesawAngleRight) + degrees(seesawAngle)) * 80; // Temporäre Werte, bis die Kraft mit Federn berechnet wird [N]
+        seesawRightForce = (-degrees(seesawAngleRight) + degrees(seesawAngle))/2.05; // Temporäre Werte, bis die Kraft mit Federn berechnet wird [N]
         seesawRightTimeStart = gameTime;
         mouseDeltaY = 0;
         seesawRightMousePressed = false;
@@ -366,9 +377,9 @@ function draw() {
 
                 // Berechnung der Position auf der Schiefen Ebene
                 var inclinedPlane = inclinedPlaneNumeric(bouleRightInclineV, bouleRightInclineS, floorSV[bouleRightInclineFloor].heading(), frameTimeStepped);
-                //var debugAlpha = "alpha: " + degrees(floorSV[bouleRightInclineFloor].heading());
-                //var debugV = "v: " + inclinedPlane.v;
-                //var debugS = "s: " + inclinedPlane.s;
+                var debugAlpha = "alpha: " + degrees(floorSV[bouleRightInclineFloor].heading());
+                var debugV = "v: " + inclinedPlane.v;
+                var debugS = "s: " + inclinedPlane.s;
                 bouleRightInclineV = inclinedPlane.v;
                 bouleRightInclineS = inclinedPlane.s;
                 //console.log("bouleRightInclineV: " + bouleRightInclineV + " bouleRightInclineS: " + bouleRightInclineS);
@@ -478,12 +489,22 @@ function draw() {
             line(floorPV[i].x * M, floorPV[i].y * M, p5.Vector.add(floorPV[i], floorSV[i]).x * M, p5.Vector.add(floorPV[i], floorSV[i]).y * M);
         }*/
     pop();
+
     // Debug Text
-    /*textAlign(LEFT);
+    textAlign(LEFT);
     fill('black');
-    text(debugAlpha, 50, 30);
+    textSize(36);
+    /*text(debugAlpha, 50, 30);
     text(debugV, 50, 100);
     text(debugS, 50, 200);*/
+    var windSpeedText = "Windgeschwindigkeit: " + Math.floor(Math.abs(windSpeed)*100)/100 + " m/s";
+    if (windSpeed > 0) {
+        windSpeedText = windSpeedText + " →";
+    } else {
+        windSpeedText = windSpeedText + " ←";
+    }
+    text(windSpeedText, 50, 300);
+    
 }
 
 /* isr */
@@ -526,10 +547,11 @@ function mouseInRangeCircular(areaPosX, areaPosY, radius) {
     return Math.sqrt(deltaX * deltaX  + deltaY * deltaY) < radius;
 }
 
-// Schräger Wurf, numerischer Ansatz
+// Schräger Wurf mit Luftreibung, numerischer Ansatz
 function obliqueThrowNumeric(PV0, VV0, deltaT) {
+    var speed = Math.sqrt(Math.pow((VV0.x - windSpeed), 2) + Math.pow(VV0.y, 2));    
+    var VV = createVector(VV0.x - (VV0.x * speed - windSpeed)/(bouleFrictionMass * 2) * deltaT, VV0.y - (VV0.y * speed/(2*bouleFrictionMass) + gravity) * deltaT);
     var PV = createVector(PV0.x + VV0.x * deltaT, PV0.y + VV0.y * deltaT);
-    var VV = createVector(VV0.x, VV0.y - gravity * deltaT);
     var newVectors = [PV, VV];
     return newVectors;
 }
@@ -537,14 +559,13 @@ function obliqueThrowNumeric(PV0, VV0, deltaT) {
 // Schiefe Ebene, numerischer Ansatz, mit Reibung
 function inclinedPlaneNumeric(v0, s0, alpha, deltaT) {
     // Fallunterscheidung für Vorzeichen von v0
-    var sign = 1;
-    if (v0 < Math.abs(gravity * frictionFactor * deltaT)) {
-        sign = -1;
-    }
-
-    // falls v0 = 0 gibt es keine Gleitreibung und da es Kugeln sind kann angenommen werden, dass es keine Haftreibung gibt
-    if (v0 == 0) {
+    var sign;
+    if (Math.abs(v0) < gravity * frictionFactor * deltaT) {
         sign = 0;
+    } else if (v0 > 0) {
+        sign = 1;
+    } else {
+        sign = -1;
     }
 
     var v = v0 + gravity * (-sin(alpha) - sign * frictionFactor * cos(alpha)) * deltaT;
@@ -555,6 +576,12 @@ function inclinedPlaneNumeric(v0, s0, alpha, deltaT) {
     }
 
     var s = s0 + v0 * deltaT;
+
+    // Berechnungs-Ungenauigkeiten ignorieren
+    if (Math.abs(v) < 0.0001) {
+        s = s0;
+    }
+
     return {
         v: v,
         s: s
