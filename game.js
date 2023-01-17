@@ -1,7 +1,7 @@
 /* GTAT2 Game Technology & Interactive Systems */
 /* Autor: Paul Klingberg, 575868*/
-/* Übung Nr. 9*/
-/* Datum: 2022-12-19*/
+/* Übung Nr. 10*/
+/* Datum: 2023-01-16*/
 
 /* declarations */
 
@@ -28,6 +28,10 @@ const seesawLength = 0.25;                                 // Länge der Wippen 
 const seesawThickness = 0.005;                             // Dicke der Wippen [m]
 const seesawTriangleOffset = 0.07;                         // Verschiebung des Wippen-Dreiecks vom Zentrum der Wippen [m]
 const seesawTriangleSideLength = 0.025;                    // Seitenlänge des Wippen-Dreiecks [m]
+const seesawSpringConstant = 2500;                         // Federkonstante [N/m]
+var seesawSpringForce = 0;                                 // Rückstellkraft der Wippe [N]
+var seesawSpringPressed = 0;                               // Strecke der Komprimierung der Feder [m]
+var seesawSpringVelocity = 0;                              // Geschwindigkeit der Feder [m/s]
 var triangleHeight;                                        // Höhe des Dreiecks unter der Wippe [m]
 var seesawTriangleHeight;                                  // Höhe des Dreiecks auf der Wippe[m]
 var seesawAngle = 20;                                      // Start-Winkel der Wippen [grad]
@@ -72,12 +76,8 @@ var floorSV = [];                                          // Segmentvektoren de
 var floorSVLength = [];                                    // Länge der Segmentvektoren der Segmente
 
 /* game state */
-var gameTime, frameTime;                                   // Zeit und Zeitincrement [s]
+var frameTime;                                             // Zeitincrement [s]
 var frmRate = 60;                                          // Bildwechselrate [frames/s]
-var seesawLeftForce = 0;                                   // Kraft, die die linke Wippe auf den Ball auswirkt [N]
-var seesawLeftTimeStart = 0;                               // Zeit, seit der linke Boule geworfen wurde [s]
-var seesawRightForce = 0;                                  // Kraft, die die rechte Wippe auf den Ball auswirkt [N]
-var seesawRightTimeStart = 0;                              // Zeit, seit der rechte Boule geworfen wurde [s]
 var gameState = "stopped"                                  // State Machine für den Spielstatus
 var bouleLeftState = "onSeesaw";                           // State Machine für den linken Boule
 var bouleRightState = "onSeesaw";                          // State Machine für den rechten Boule
@@ -91,11 +91,11 @@ function setup() {
     createCanvas(windowWidth, windowHeight);
     frameRate(frmRate);                                    // Setzen der Bildwechselrate
     frameTime = 1/frmRate/timescale;                       // Zeitincrement mit Bildwechsel synchron
-    gameTime = 0;                                          // Sekunden, seit das Spiel startete
 
     /* derived variables */
     seesawAngle = radians(seesawAngle);                   // Startwinkel in rad umrechnen
-    triangleHeight= Math.sin(seesawAngle) * seesawLength/2; // Höhe des Dreiecks unter der Wippe (wird berechnet) [m]
+    triangleHeight = Math.sin(seesawAngle) * seesawLength/2; // Höhe des Dreiecks unter der Wippe (wird berechnet) [m]
+    seesawSpringLength = 2 * triangleHeight;              // Ruhefederlänge berechnen [m]
     seesawAngleRight = seesawAngle;                       // Winkel der rechten Wippe [rad]
     seesawAngleLeft = mirrorAngle(seesawAngle);           // Winkel der linken Wippe [rad]
     seesawAngleRightControl = seesawAngleRight;
@@ -175,11 +175,13 @@ function draw() {
                 bouleRightState = "onSeesaw";
                 seesawAngleLeftControl = seesawAngleLeft;
                 seesawAngleRightControl = seesawAngleRight;
-                windSpeed = (Math.random()*2 - 1) * windSpeedMax; 
+                seesawSpringForce = 0;
+                seesawSpringPressed = 0;
+                seesawSpringVelocity = 0;
+                windSpeed = (Math.random()*2 - 1) * windSpeedMax;
                 break;
             case "stopped":
                 gameState = "started";
-                gameTime = 0;
                 break;
         }
         mPressed = false;
@@ -208,19 +210,12 @@ function draw() {
     }
 
     if (seesawLeftMousePressed && mReleased) {
-        seesawLeftForce = (degrees(seesawAngleLeft) + degrees(seesawAngle))/2.05; // Temporäre Werte, bis die Kraft mit Federn berechnet wird [N]
-        seesawLeftTimeStart = gameTime;
+        seesawSpringPressed = triangleHeight - Math.sin(mirrorAngle(seesawAngleLeft)) * seesawLength / 2;
+        seesawSpringForce = springForce(seesawSpringConstant, seesawSpringPressed);
         mouseDeltaY = 0;
         seesawLeftMousePressed = false;
         mReleased = false;
-        bouleLeftState = "onFlight";
-        bouleLeftV0 = seesawLeftForce/bouleWeight; // Anfangsgeschwindigkeit [m/s]
- 
-       // Setzen der Anfangswerte für den schrägen Wurf
-        bouleLeftPV = bouleLeftPV0;
-        bouleLeftVV.x = 0;
-        bouleLeftVV.y = bouleLeftV0;
-        bouleLeftVV = bouleLeftVV.rotate(mirrorAngle(seesawAngle));
+        bouleLeftState = "accelerated";
     }
 
     // Maus-ziehen an der Wippe rechts
@@ -246,19 +241,12 @@ function draw() {
     }
 
     if (seesawRightMousePressed && mReleased) {
-        seesawRightForce = (-degrees(seesawAngleRight) + degrees(seesawAngle))/2.05; // Temporäre Werte, bis die Kraft mit Federn berechnet wird [N]
-        seesawRightTimeStart = gameTime;
+        seesawSpringPressed = triangleHeight - Math.sin(seesawAngleRight) * seesawLength / 2;
+        seesawSpringForce = springForce(seesawSpringConstant, seesawSpringPressed);
         mouseDeltaY = 0;
         seesawRightMousePressed = false;
         mReleased = false;
-        bouleRightState = "onFlight";
-        bouleRightV0 = seesawRightForce/bouleWeight; // Anfangsgeschwindigkeit [m/s]
-
-        // Setzen der Anfangswerte für den schrägen Wurf
-        bouleRightPV = bouleRightPV0;
-        bouleRightVV.x = 0;
-        bouleRightVV.y = bouleRightV0;
-        bouleRightVV = bouleRightVV.rotate(seesawAngle);
+        bouleRightState = "accelerated";
     }
 
     /* calculation */
@@ -266,20 +254,14 @@ function draw() {
     for (let timeSteps = 0; timeSteps < frameQuantization; timeSteps++) { // Zwischenschritte
         var frameTimeStepped = frameTime/frameQuantization;
 
-        // aktuelle Zeit
-        switch (gameState) {
-            case "started":
-                gameTime = gameTime + frameTimeStepped;
-                break;
-            case "stopped":
-                gameTime = 0;
-                break;
-        }
-
         // Boule links Position
-        var bouleLeftTime = 0
         switch(bouleLeftState) {
             case "onSeesaw":
+                bouleLeftPV.x = -seesawDistance/2 - seesawLength/2 + seesawTriangleOffset/2.5;
+                bouleLeftPV.y = triangleHeight + bouleDiameter/2;
+                bouleLeftPV = rotateVectorAroundVector(bouleLeftPV, seesawLeftPos, seesawAngleLeft);
+                break;
+            case "accelerated":
                 bouleLeftPV.x = -seesawDistance/2 - seesawLength/2 + seesawTriangleOffset/2.5;
                 bouleLeftPV.y = triangleHeight + bouleDiameter/2;
                 bouleLeftPV = rotateVectorAroundVector(bouleLeftPV, seesawLeftPos, seesawAngleLeft);
@@ -307,14 +289,11 @@ function draw() {
                     }
                 }
 
-                bouleLeftTime = gameTime - seesawLeftTimeStart;
                 var bouleLeftVectors = obliqueThrowNumeric(bouleLeftPV, bouleLeftVV, frameTimeStepped);
                 bouleLeftPV = bouleLeftVectors[0];
                 bouleLeftVV = bouleLeftVectors[1];
                 break;
             case "onSlope":
-                bouleLeftTime = gameTime - seesawLeftTimeStart;
-
                 // Check, ob zwischen den Ebenen übergeben werden muss
                 var handover = inclinedPlaneHandover(bouleLeftInclineFloor, floorSVLength, bouleLeftInclineS, bouleDiameter, seesawAngle);
                 bouleLeftInclineS = handover.bouleS;
@@ -324,7 +303,6 @@ function draw() {
                 var inclinedPlane = inclinedPlaneNumeric(bouleLeftInclineV, bouleLeftInclineS, floorSV[bouleLeftInclineFloor].heading(), frameTimeStepped);
                 bouleLeftInclineV = inclinedPlane.v;
                 bouleLeftInclineS = inclinedPlane.s;
-                //console.log("bouleLeftInclineV: " + bouleLeftInclineV + " bouleLeftInclineS: " + bouleLeftInclineS);
                 var floorSVnormalized = floorSV[bouleLeftInclineFloor].normalize();
                 bouleLeftPV = p5.Vector.add(floorPV[bouleLeftInclineFloor], p5.Vector.mult(floorSVnormalized, bouleLeftInclineS));
                 bouleLeftPV.add(p5.Vector.mult(createVector(-floorSVnormalized.y, floorSVnormalized.x), bouleDiameter/2)); // Boule um Radius hochschieben
@@ -332,9 +310,13 @@ function draw() {
         }
 
         // Boule rechts Position
-        var bouleRightTime = 0;
         switch(bouleRightState) {
             case "onSeesaw":
+                bouleRightPV.x = seesawDistance/2 + seesawLength/2 - seesawTriangleOffset/2.5;
+                bouleRightPV.y = triangleHeight + bouleDiameter/2;
+                bouleRightPV = rotateVectorAroundVector(bouleRightPV, seesawRightPos, seesawAngleRight);
+                break;
+            case "accelerated":
                 bouleRightPV.x = seesawDistance/2 + seesawLength/2 - seesawTriangleOffset/2.5;
                 bouleRightPV.y = triangleHeight + bouleDiameter/2;
                 bouleRightPV = rotateVectorAroundVector(bouleRightPV, seesawRightPos, seesawAngleRight);
@@ -362,14 +344,11 @@ function draw() {
                     }
                 }
 
-                bouleRightTime = gameTime - seesawRightTimeStart;
                 var bouleRightVectors = obliqueThrowNumeric(bouleRightPV, bouleRightVV, frameTimeStepped);
                 bouleRightPV = bouleRightVectors[0];
                 bouleRightVV = bouleRightVectors[1];
                 break;
             case "onSlope":
-                bouleRightTime = gameTime - seesawRightTimeStart;
-
                 // Check, ob zwischen den Ebenen übergeben werden muss
                 var handover = inclinedPlaneHandover(bouleRightInclineFloor, floorSVLength, bouleRightInclineS, bouleDiameter, seesawAngle);
                 bouleRightInclineS = handover.bouleS;
@@ -382,7 +361,6 @@ function draw() {
                 var debugS = "s: " + inclinedPlane.s;
                 bouleRightInclineV = inclinedPlane.v;
                 bouleRightInclineS = inclinedPlane.s;
-                //console.log("bouleRightInclineV: " + bouleRightInclineV + " bouleRightInclineS: " + bouleRightInclineS);
                 var floorSVnormalized = floorSV[bouleRightInclineFloor].normalize();
                 bouleRightPV = p5.Vector.add(floorPV[bouleRightInclineFloor], p5.Vector.mult(floorSVnormalized, bouleRightInclineS));
                 bouleRightPV.add(p5.Vector.mult(createVector(-floorSVnormalized.y, floorSVnormalized.x), bouleDiameter/2)); // Boule um Radius hochschieben
@@ -396,11 +374,26 @@ function draw() {
                 if (seesawAngleLeft < mirrorAngle(seesawAngle)) seesawAngleLeft = mirrorAngle(seesawAngle);
                 if (seesawAngleLeft > seesawAngle) seesawAngleLeft = seesawAngle;
                 break;
+            case "accelerated":
+                seesawSpringVelocity = seesawSpringVelocity + seesawSpringForce * frameTimeStepped;
+                seesawSpringPressed = seesawSpringPressed + seesawSpringVelocity * frameTimeStepped;
+                seesawSpringForce = springForce(seesawSpringConstant, seesawSpringPressed);
+                seesawAngleLeft = mirrorAngle(Math.asin((triangleHeight - seesawSpringPressed) * 2/seesawLength));
+                if (seesawAngleLeft < mirrorAngle(seesawAngle)) {
+                    seesawAngleLeft = mirrorAngle(seesawAngle);
+                    // Setzen der Anfangswerte für den schrägen Wurf
+                    bouleLeftPV = bouleLeftPV0;
+                    bouleLeftVV.x = 0;
+                    bouleLeftVV.y = -seesawSpringVelocity;
+                    bouleLeftVV = bouleLeftVV.rotate(mirrorAngle(seesawAngle));
+                    seesawSpringForce = 0;
+                    seesawSpringPressed = 0;
+                    seesawSpringVelocity = 0;
+                    bouleLeftState = "onFlight";
+                }
+                break;
             case "onFlight":
-                // Kleine Wippenanimation, bis Federn implementiert sind
-                var seesawLeftMyLerpAmount = bouleLeftTime * 0.5;
-                if (seesawLeftMyLerpAmount >= 1) seesawLeftMyLerpAmount = 1;
-                seesawAngleLeft = myLerp(seesawAngleLeft, mirrorAngle(seesawAngle), seesawLeftMyLerpAmount);
+                seesawAngleLeft = mirrorAngle(seesawAngle);
                 break;
             case "onSlope":
                 seesawAngleLeft = mirrorAngle(seesawAngle);
@@ -414,11 +407,26 @@ function draw() {
                 if (seesawAngleRight < mirrorAngle(seesawAngle)) seesawAngleRight = mirrorAngle(seesawAngle);
                 if (seesawAngleRight > seesawAngle) seesawAngleRight = seesawAngle;
                 break;
+            case "accelerated":
+                seesawSpringVelocity = seesawSpringVelocity + seesawSpringForce * frameTimeStepped;
+                seesawSpringPressed = seesawSpringPressed + seesawSpringVelocity * frameTimeStepped;
+                seesawSpringForce = springForce(seesawSpringConstant, seesawSpringPressed);
+                seesawAngleRight = Math.asin((triangleHeight - seesawSpringPressed) * 2/seesawLength);
+                if (seesawAngleRight > seesawAngle) {
+                    seesawAngleRight = seesawAngle;
+                    // Setzen der Anfangswerte für den schrägen Wurf
+                    bouleRightPV = bouleRightPV0;
+                    bouleRightVV.x = 0;
+                    bouleRightVV.y = -seesawSpringVelocity;
+                    bouleRightVV = bouleRightVV.rotate(seesawAngle);
+                    seesawSpringForce = 0;
+                    seesawSpringPressed = 0;
+                    seesawSpringVelocity = 0;
+                    bouleRightState = "onFlight";
+                }
+                break;
             case "onFlight":
-                // Kleine Wippenanimation, bis Federn implementiert sind
-                var seesawRightMyLerpAmount = bouleRightTime * 0.5;
-                if (seesawRightMyLerpAmount >= 1) seesawRightMyLerpAmount = 1;
-                seesawAngleRight = myLerp(seesawAngleRight, seesawAngle, seesawRightMyLerpAmount);
+                seesawAngleRight = seesawAngle;
                 break;
             case "onSlope":
                 seesawAngleRight = seesawAngle;
@@ -490,7 +498,7 @@ function draw() {
         }*/
     pop();
 
-    // Debug Text
+    // Debug
     textAlign(LEFT);
     fill('black');
     textSize(36);
@@ -611,11 +619,6 @@ function inclinedPlaneHandover(floor0, floorSVLength, bouleS0, bouleDiameter, se
     }
 }
 
-// Lineare Interpolation
-function myLerp(start, end, amount){
-  return (1 - amount) * start + amount * end;
-}
-
 // Rotiert einen Vektor um einen anderen Vektor
 function rotateVectorAroundVector(vector, pivotVector, rotationAngle) {
     // Vector mittels pivotVector zum Ursprung bewegen
@@ -676,6 +679,10 @@ function transformVectorAlongCoords(inputV, phi) {
     outputV.x = magnitude * sin(alpha - phi);
     outputV.y = magnitude * cos(alpha - phi);
     return outputV;
+}
+
+function springForce(force, distance) {
+    return -force * distance;
 }
 
 /* drawing functions */
